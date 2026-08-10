@@ -1690,35 +1690,66 @@
                 return false;
             }
 
+            // Basic email format check
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showStatus('Please enter a valid email address.', false);
+                return false;
+            }
+
             btn.disabled = true;
             btnText.textContent = 'Sending...';
             status.classList.add('hidden');
 
-            /*
-             * OPTIONAL: silent inbox delivery via Web3Forms (free).
-             * 1. Open https://web3forms.com
-             * 2. Enter amanpatel27102004@gmail.com and create access key
-             * 3. Paste the key between the quotes below
-             * Leave empty to use the reliable mailto method.
-             */
-            const WEB3FORMS_ACCESS_KEY = '7aaadf1b-5808-47e3-ae7c-e4508ce2e720';  // e.g. 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+            // Your Web3Forms access key (from https://web3forms.com)
+            const WEB3FORMS_ACCESS_KEY = '7aaadf1b-5808-47e3-ae7c-e4508ce2e720';
+
+            const resetBtn = () => {
+                btn.disabled = false;
+                btnText.textContent = 'Send Message';
+            };
 
             const finishOk = (msg) => {
                 showStatus(msg, true);
                 form.reset();
-                btn.disabled = false;
-                btnText.textContent = 'Send Message';
+                resetBtn();
                 setTimeout(() => status.classList.add('hidden'), 10000);
             };
-            const finishErr = (msg) => {
-                showStatus(msg, false);
-                btn.disabled = false;
-                btnText.textContent = 'Send Message';
-                setTimeout(() => status.classList.add('hidden'), 12000);
-            };
 
-            // Path A: Web3Forms (only if key is set)
+            // mailto helper that works better on mobile (creates a real link and taps it)
+            function openMailto() {
+                const body = encodeURIComponent(
+                    'Name: ' + name + '\n' +
+                    'Email: ' + email + '\n\n' +
+                    message
+                );
+                const href = 'mailto:amanpatel27102004@gmail.com'
+                    + '?subject=' + encodeURIComponent(subject)
+                    + '&body=' + body;
+
+                showStatus('Opening your email app… Please press Send there.', true);
+
+                // Mobile-friendly: use a temporary <a> with click (more reliable than location.href on iOS/Android)
+                const a = document.createElement('a');
+                a.href = href;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(function() {
+                    document.body.removeChild(a);
+                    form.reset();
+                    resetBtn();
+                    setTimeout(() => status.classList.add('hidden'), 10000);
+                }, 600);
+            }
+
+            // Prefer Web3Forms (silent send to your Gmail) — works on mobile + desktop when online
             if (WEB3FORMS_ACCESS_KEY && WEB3FORMS_ACCESS_KEY.length > 10) {
+                // Timeout so mobile never stays stuck on "Sending..."
+                const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                const timer = setTimeout(function() {
+                    if (controller) controller.abort();
+                }, 12000);
+
                 fetch('https://api.web3forms.com/submit', {
                     method: 'POST',
                     headers: {
@@ -1727,50 +1758,39 @@
                     },
                     body: JSON.stringify({
                         access_key: WEB3FORMS_ACCESS_KEY,
-                        subject: subject,
-                        from_name: name,
+                        name: name,
                         email: email,
+                        subject: subject,
                         message: message,
-                        // auto reply to visitor
+                        from_name: name,
                         replyto: email
-                    })
+                    }),
+                    signal: controller ? controller.signal : undefined
                 })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
+                .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+                .then(function(result) {
+                    clearTimeout(timer);
+                    if (result.data && result.data.success) {
                         finishOk("Message sent! I'll get back to you soon.");
                     } else {
-                        // fall through to mailto
-                        openMailto();
+                        const errMsg = (result.data && result.data.message) ? result.data.message : 'Could not send.';
+                        showStatus(errMsg + ' Trying email app…', false);
+                        setTimeout(openMailto, 800);
                     }
                 })
-                .catch(() => openMailto());
+                .catch(function(err) {
+                    clearTimeout(timer);
+                    console.error('Form send error:', err);
+                    showStatus('Network issue. Opening your email app instead…', false);
+                    setTimeout(openMailto, 800);
+                });
+
                 return false;
             }
 
-            // Path B: mailto (always works — opens visitor's email app)
+            // No key configured — use mailto
             openMailto();
             return false;
-
-            function openMailto() {
-                const body = encodeURIComponent(
-                    'Name: ' + name + '\\n' +
-                    'Email: ' + email + '\\n\\n' +
-                    message
-                );
-                const href = 'mailto:amanpatel27102004@gmail.com'
-                    + '?subject=' + encodeURIComponent(subject)
-                    + '&body=' + body;
-                showStatus('Opening your email app to send the message...', true);
-                // slight delay so status is visible
-                setTimeout(function() {
-                    window.location.href = href;
-                    form.reset();
-                    btn.disabled = false;
-                    btnText.textContent = 'Send Message';
-                    setTimeout(() => status.classList.add('hidden'), 8000);
-                }, 400);
-            }
         }
 
         // ===== Tuition Class Gallery Modal =====
